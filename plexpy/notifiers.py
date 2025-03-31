@@ -817,7 +817,7 @@ class PrettyMetadata(object):
                 }
 
     def get_poster_url(self):
-        poster_url = self.parameters.get('poster_url')
+        poster_url = f"https://plex.partyislife.com/image/{self.parameters['rating_key']}.jpg"
         if not poster_url:
             if self.media_type in ('artist', 'album', 'track'):
                 poster_url = common.ONLINE_COVER_THUMB
