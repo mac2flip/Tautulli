@@ -20,7 +20,11 @@ import time
 import threading
 
 from configobj import ConfigObj, ParseError
-from hashing_passwords import make_hash
+import hashlib
+
+def make_hash(password):
+    """Generate a hash for the given password."""
+    return hashlib.sha256(password.encode()).hexdigest()
 
 import plexpy
 from plexpy import helpers

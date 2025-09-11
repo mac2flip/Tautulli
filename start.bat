@@ -1,1 +1,1 @@
-Start pythonw Tautulli.py
+Start python Tautulli.py
