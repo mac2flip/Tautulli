@@ -364,13 +364,16 @@ class DataFactory(object):
             stats_cards = plexpy.CONFIG.HOME_STATS_CARDS
 
         where_timeframe = ''
+        where_timeframe_args = []
         if before:
-            where_timeframe += "AND strftime('%%Y-%%m-%%d', datetime(started, 'unixepoch', 'localtime')) <= '%s' " % before
+            where_timeframe += "AND strftime('%%Y-%%m-%%d', datetime(started, 'unixepoch', 'localtime')) <= '?' "
+            where_timeframe_args.append(before)
             if not after:
                 timestamp = helpers.YMD_to_timestamp(before) - time_range * 24 * 60 * 60
                 where_timeframe += "AND session_history.stopped >= %s " % timestamp
         if after:
-            where_timeframe += "AND strftime('%%Y-%%m-%%d', datetime(started, 'unixepoch', 'localtime')) >= '%s' " % after
+            where_timeframe += "AND strftime('%%Y-%%m-%%d', datetime(started, 'unixepoch', 'localtime')) >= '?' "
+            where_timeframe_args.append(after)
             if not before:
                 timestamp = helpers.YMD_to_timestamp(after) + time_range * 24 * 60 * 60
                 where_timeframe += "AND session_history.stopped <= %s " % timestamp
@@ -379,10 +382,13 @@ class DataFactory(object):
             where_timeframe += "AND session_history.stopped >= %s" % timestamp
 
         where_id = ''
+        where_id_args = []
         if section_id:
-            where_id += 'AND session_history.section_id = %s ' % section_id
+            where_id += 'AND session_history.section_id = ? '
+            where_id_args.append(section_id)
         if user_id:
-            where_id += 'AND session_history.user_id = %s ' % user_id
+            where_id += 'AND session_history.user_id = ? '
+            where_id_args.append(user_id)
 
         group_by = 'session_history.reference_id' if grouping else 'session_history.id'
         sort_type = 'total_duration' if stats_type == 'duration' else 'total_plays'
@@ -393,8 +399,9 @@ class DataFactory(object):
             if stat == 'top_movies':
                 top_movies = []
                 try:
-                    query = "SELECT sh.id, shm.full_title, shm.year, sh.rating_key, shm.thumb, sh.section_id, " \
-                            "shm.art, sh.media_type, shm.content_rating, shm.labels, sh.started, shm.live, shm.guid, " \
+                    query = "SELECT sh.id, shm.full_title, shm.year, sh.rating_key, shm.thumb, " \
+                            "sh.section_id, shm.art, sh.media_type, shm.content_rating, shm.rating, " \
+                            "shm.labels, sh.started, shm.live, shm.guid, " \
                             "MAX(sh.started) AS last_watch, COUNT(sh.id) AS total_plays, SUM(sh.d) AS total_duration " \
                             "FROM (SELECT *, SUM(CASE WHEN stopped > 0 THEN (stopped - started) - " \
                             "       (CASE WHEN paused_counter IS NULL THEN 0 ELSE paused_counter END) ELSE 0 END) " \
@@ -406,7 +413,7 @@ class DataFactory(object):
                             "GROUP BY shm.full_title, shm.year " \
                             "ORDER BY %s DESC, sh.started DESC " \
                             "LIMIT %s OFFSET %s " % (where_timeframe, where_id, group_by, sort_type, stats_count, stats_start)
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args + where_id_args)
                 except Exception as e:
                     logger.warn("Tautulli DataFactory :: Unable to execute database query for get_home_stats: top_movies: %s." % e)
                     return None
@@ -426,6 +433,7 @@ class DataFactory(object):
                            'section_id': item['section_id'],
                            'media_type': item['media_type'],
                            'content_rating': item['content_rating'],
+                           'rating': item['rating'],
                            'labels': item['labels'].split(';') if item['labels'] else (),
                            'user': '',
                            'friendly_name': '',
@@ -444,8 +452,9 @@ class DataFactory(object):
             elif stat == 'popular_movies':
                 popular_movies = []
                 try:
-                    query = "SELECT sh.id, shm.full_title, shm.year, sh.rating_key, shm.thumb, sh.section_id, " \
-                            "shm.art, sh.media_type, shm.content_rating, shm.labels, sh.started, shm.live, shm.guid, " \
+                    query = "SELECT sh.id, shm.full_title, shm.year, sh.rating_key, shm.thumb, " \
+                            "sh.section_id, shm.art, sh.media_type, shm.content_rating, shm.rating, " \
+                            "shm.labels, sh.started, shm.live, shm.guid, " \
                             "COUNT(DISTINCT sh.user_id) AS users_watched, " \
                             "MAX(sh.started) AS last_watch, COUNT(sh.id) as total_plays, SUM(sh.d) AS total_duration " \
                             "FROM (SELECT *, SUM(CASE WHEN stopped > 0 THEN (stopped - started) - " \
@@ -458,7 +467,7 @@ class DataFactory(object):
                             "GROUP BY shm.full_title, shm.year " \
                             "ORDER BY users_watched DESC, %s DESC, sh.started DESC " \
                             "LIMIT %s OFFSET %s " % (where_timeframe, where_id, group_by, sort_type, stats_count, stats_start)
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args + where_id_args)
                 except Exception as e:
                     logger.warn("Tautulli DataFactory :: Unable to execute database query for get_home_stats: popular_movies: %s." % e)
                     return None
@@ -477,6 +486,7 @@ class DataFactory(object):
                            'section_id': item['section_id'],
                            'media_type': item['media_type'],
                            'content_rating': item['content_rating'],
+                           'rating': item['rating'],
                            'labels': item['labels'].split(';') if item['labels'] else (),
                            'user': '',
                            'friendly_name': '',
@@ -497,7 +507,7 @@ class DataFactory(object):
                     query = "SELECT sh.id, shm.grandparent_title, sh.grandparent_rating_key, " \
                             "shm.grandparent_thumb, sh.section_id, " \
                             "shm.year, sh.rating_key, shm.art, sh.media_type, " \
-                            "shm.content_rating, shm.labels, sh.started, shm.live, shm.guid, " \
+                            "shm.content_rating, shm.rating, shm.labels, sh.started, shm.live, shm.guid, " \
                             "MAX(sh.started) AS last_watch, COUNT(sh.id) AS total_plays, SUM(sh.d) AS total_duration " \
                             "FROM (SELECT *, SUM(CASE WHEN stopped > 0 THEN (stopped - started) - " \
                             "       (CASE WHEN paused_counter IS NULL THEN 0 ELSE paused_counter END) ELSE 0 END) " \
@@ -509,7 +519,7 @@ class DataFactory(object):
                             "GROUP BY shm.grandparent_title " \
                             "ORDER BY %s DESC, sh.started DESC " \
                             "LIMIT %s OFFSET %s " % (where_timeframe, where_id, group_by, sort_type, stats_count, stats_start)
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args + where_id_args)
                 except Exception as e:
                     logger.warn("Tautulli DataFactory :: Unable to execute database query for get_home_stats: top_tv: %s." % e)
                     return None
@@ -529,6 +539,7 @@ class DataFactory(object):
                            'section_id': item['section_id'],
                            'media_type': item['media_type'],
                            'content_rating': item['content_rating'],
+                           'rating': item['rating'],
                            'labels': item['labels'].split(';') if item['labels'] else (),
                            'user': '',
                            'friendly_name': '',
@@ -550,7 +561,7 @@ class DataFactory(object):
                     query = "SELECT sh.id, shm.grandparent_title, sh.grandparent_rating_key, " \
                             "shm.grandparent_thumb, sh.section_id, " \
                             "shm.year, sh.rating_key, shm.art, sh.media_type, " \
-                            "shm.content_rating, shm.labels, sh.started, shm.live, shm.guid, " \
+                            "shm.content_rating, shm.rating, shm.labels, sh.started, shm.live, shm.guid, " \
                             "COUNT(DISTINCT sh.user_id) AS users_watched, " \
                             "MAX(sh.started) AS last_watch, COUNT(sh.id) as total_plays, SUM(sh.d) AS total_duration " \
                             "FROM (SELECT *, SUM(CASE WHEN stopped > 0 THEN (stopped - started) - " \
@@ -563,7 +574,7 @@ class DataFactory(object):
                             "GROUP BY shm.grandparent_title " \
                             "ORDER BY users_watched DESC, %s DESC, sh.started DESC " \
                             "LIMIT %s OFFSET %s " % (where_timeframe, where_id, group_by, sort_type, stats_count, stats_start)
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args + where_id_args)
                 except Exception as e:
                     logger.warn("Tautulli DataFactory :: Unable to execute database query for get_home_stats: popular_tv: %s." % e)
                     return None
@@ -582,6 +593,7 @@ class DataFactory(object):
                            'section_id': item['section_id'],
                            'media_type': item['media_type'],
                            'content_rating': item['content_rating'],
+                           'rating': item['rating'],
                            'labels': item['labels'].split(';') if item['labels'] else (),
                            'user': '',
                            'friendly_name': '',
@@ -601,8 +613,9 @@ class DataFactory(object):
                 try:
                     query = "SELECT sh.id, shm.grandparent_title, shm.original_title, shm.year, " \
                             "sh.grandparent_rating_key, shm.grandparent_thumb, sh.section_id, " \
-                            "shm.art, sh.media_type, shm.content_rating, shm.labels, sh.started, shm.live, shm.guid, " \
-                            "MAX(sh.started) AS last_watch, COUNT(sh.id) AS total_plays, SUM(sh.d) AS total_duration " \
+                            "shm.art, sh.media_type, shm.content_rating, shm.rating, shm.labels, " \
+                            "sh.started, shm.live, shm.guid, MAX(sh.started) AS last_watch, " \
+                            "COUNT(sh.id) AS total_plays, SUM(sh.d) AS total_duration " \
                             "FROM (SELECT *, SUM(CASE WHEN stopped > 0 THEN (stopped - started) - " \
                             "       (CASE WHEN paused_counter IS NULL THEN 0 ELSE paused_counter END) ELSE 0 END) " \
                             "       AS d " \
@@ -613,7 +626,7 @@ class DataFactory(object):
                             "GROUP BY shm.original_title, shm.grandparent_title " \
                             "ORDER BY %s DESC, sh.started DESC " \
                             "LIMIT %s OFFSET %s " % (where_timeframe, where_id, group_by, sort_type, stats_count, stats_start)
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args + where_id_args)
                 except Exception as e:
                     logger.warn("Tautulli DataFactory :: Unable to execute database query for get_home_stats: top_music: %s." % e)
                     return None
@@ -633,6 +646,7 @@ class DataFactory(object):
                            'section_id': item['section_id'],
                            'media_type': item['media_type'],
                            'content_rating': item['content_rating'],
+                           'rating': item['rating'],
                            'labels': item['labels'].split(';') if item['labels'] else (),
                            'user': '',
                            'friendly_name': '',
@@ -653,8 +667,8 @@ class DataFactory(object):
                 try:
                     query = "SELECT sh.id, shm.grandparent_title, shm.original_title, shm.year, " \
                             "sh.grandparent_rating_key, shm.grandparent_thumb, sh.section_id, " \
-                            "shm.art, sh.media_type, shm.content_rating, shm.labels, sh.started, shm.live, shm.guid, " \
-                            "COUNT(DISTINCT sh.user_id) AS users_watched, " \
+                            "shm.art, sh.media_type, shm.content_rating, shm.rating, shm.labels, " \
+                            "sh.started, shm.live, shm.guid, COUNT(DISTINCT sh.user_id) AS users_watched, " \
                             "MAX(sh.started) AS last_watch, COUNT(sh.id) as total_plays, SUM(sh.d) AS total_duration " \
                             "FROM (SELECT *, SUM(CASE WHEN stopped > 0 THEN (stopped - started) - " \
                             "       (CASE WHEN paused_counter IS NULL THEN 0 ELSE paused_counter END) ELSE 0 END) " \
@@ -666,7 +680,7 @@ class DataFactory(object):
                             "GROUP BY shm.original_title, shm.grandparent_title " \
                             "ORDER BY users_watched DESC, %s DESC, sh.started DESC " \
                             "LIMIT %s OFFSET %s " % (where_timeframe, where_id, group_by, sort_type, stats_count, stats_start)
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args + where_id_args)
                 except Exception as e:
                     logger.warn("Tautulli DataFactory :: Unable to execute database query for get_home_stats: popular_music: %s." % e)
                     return None
@@ -685,6 +699,7 @@ class DataFactory(object):
                            'section_id': item['section_id'],
                            'media_type': item['media_type'],
                            'content_rating': item['content_rating'],
+                           'rating': item['rating'],
                            'labels': item['labels'].split(';') if item['labels'] else (),
                            'user': '',
                            'friendly_name': '',
@@ -724,7 +739,7 @@ class DataFactory(object):
                             "GROUP BY sh.section_id " \
                             "ORDER BY %s DESC, sh.started DESC " \
                             "LIMIT %s OFFSET %s " % (where_timeframe[4:], where_id, group_by, sort_type, stats_count, stats_start)
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args + where_id_args)
                 except Exception as e:
                     logger.warn("Tautulli DataFactory :: Unable to execute database query for get_home_stats: top_libraries: %s." % e)
                     return None
@@ -812,7 +827,7 @@ class DataFactory(object):
                             "GROUP BY sh.user_id " \
                             "ORDER BY %s DESC, sh.started DESC " \
                             "LIMIT %s OFFSET %s " % (where_timeframe[4:], where_id, group_by, sort_type, stats_count, stats_start)
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args + where_id_args)
                 except Exception as e:
                     logger.warn("Tautulli DataFactory :: Unable to execute database query for get_home_stats: top_users: %s." % e)
                     return None
@@ -879,7 +894,7 @@ class DataFactory(object):
                             "GROUP BY sh.platform " \
                             "ORDER BY %s DESC, sh.started DESC " \
                             "LIMIT %s OFFSET %s " % (where_timeframe[4:], where_id, group_by, sort_type, stats_count, stats_start)
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args + where_id_args)
                 except Exception as e:
                     logger.warn("Tautulli DataFactory :: Unable to execute database query for get_home_stats: top_platforms: %s." % e)
                     return None
@@ -953,10 +968,11 @@ class DataFactory(object):
                 last_watched = []
                 try:
                     query = "SELECT sh.id, shm.title, shm.grandparent_title, shm.full_title, shm.year, " \
-                            "shm.media_index, shm.parent_media_index, " \
-                            "sh.rating_key, shm.grandparent_rating_key, shm.thumb, shm.grandparent_thumb, " \
-                            "sh.user, sh.user_id, u.custom_avatar_url as user_thumb, sh.player, sh.section_id, " \
-                            "shm.art, sh.media_type, shm.content_rating, shm.labels, shm.live, shm.guid, " \
+                            "shm.media_index, shm.parent_media_index, sh.rating_key, " \
+                            "shm.grandparent_rating_key, shm.thumb, shm.grandparent_thumb, sh.user, " \
+                            "sh.user_id, u.custom_avatar_url as user_thumb, sh.player, sh.section_id, " \
+                            "shm.art, sh.media_type, shm.content_rating, shm.rating, shm.labels, " \
+                            "shm.live, shm.guid, " \
                             "(CASE WHEN u.friendly_name IS NULL OR TRIM(u.friendly_name) = ''" \
                             "   THEN u.username ELSE u.friendly_name END) " \
                             "   AS friendly_name, " \
@@ -979,7 +995,7 @@ class DataFactory(object):
                             "LIMIT %s OFFSET %s" % (watched_threshold,
                                                     where_timeframe, where_id, group_by, watched_where,
                                                     stats_count, stats_start)
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args + where_id_args)
                 except Exception as e:
                     logger.warn("Tautulli DataFactory :: Unable to execute database query for get_home_stats: last_watched: %s." % e)
                     return None
@@ -1009,6 +1025,7 @@ class DataFactory(object):
                            'section_id': item['section_id'],
                            'media_type': item['media_type'],
                            'content_rating': item['content_rating'],
+                           'rating': item['rating'],
                            'labels': item['labels'].split(';') if item['labels'] else (),
                            'last_watch': item['last_watch'],
                            'live': item['live'],
@@ -1069,28 +1086,28 @@ class DataFactory(object):
 
                     title = 'Concurrent Streams'
                     query = base_query
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args)
                     if result:
                         most_concurrent.append(calc_most_concurrent(title, result))
 
                     title = 'Concurrent Transcodes'
                     query = base_query \
                           + "AND shmi.transcode_decision = 'transcode' "
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args)
                     if result:
                         most_concurrent.append(calc_most_concurrent(title, result))
 
                     title = 'Concurrent Direct Streams'
                     query = base_query \
                           + "AND shmi.transcode_decision = 'copy' "
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args)
                     if result:
                         most_concurrent.append(calc_most_concurrent(title, result))
 
                     title = 'Concurrent Direct Plays'
                     query = base_query \
                           + "AND shmi.transcode_decision = 'direct play' "
-                    result = monitor_db.select(query)
+                    result = monitor_db.select(query, args=where_timeframe_args)
                     if result:
                         most_concurrent.append(calc_most_concurrent(title, result))
                 except Exception as e:
